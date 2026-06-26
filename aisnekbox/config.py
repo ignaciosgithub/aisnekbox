@@ -89,6 +89,31 @@ class Settings(BaseSettings):
     max_file_size: int = Field(
         default=1_000_000, ge=1, description="Maximum size (bytes) of a single file."
     )
+    max_total_upload_size: int = Field(
+        default=8_000_000,
+        ge=1,
+        description="Maximum combined size (bytes) of all uploaded files in one request.",
+    )
+
+    max_request_body_size: int = Field(
+        default=16_000_000,
+        ge=1024,
+        description=(
+            "Maximum accepted HTTP request body size (bytes). Oversized requests are "
+            "rejected with HTTP 413 before the body is buffered or parsed."
+        ),
+    )
+
+    # --- Concurrency / backpressure ---
+    max_concurrent_evals: int = Field(
+        default=8,
+        ge=1,
+        le=256,
+        description=(
+            "Maximum number of sandboxes allowed to run at once. Requests beyond "
+            "this limit are rejected with HTTP 429 instead of exhausting the host."
+        ),
+    )
 
     @field_validator("allowed_executables", mode="before")
     @classmethod

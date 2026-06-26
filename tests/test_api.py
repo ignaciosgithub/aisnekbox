@@ -59,3 +59,52 @@ def test_eval_requires_input(settings: Settings) -> None:
     with _client(settings) as client:
         resp = client.post("/eval", json={})
     assert resp.status_code == 422
+
+
+def test_response_has_request_id_header(settings: Settings) -> None:
+    with _client(settings) as client:
+        resp = client.get("/health")
+    assert resp.headers.get("X-Request-ID")
+
+
+def test_body_too_large_returns_413(settings: Settings) -> None:
+    small = settings.model_copy(update={"max_request_body_size": 1024})
+    app = create_app(small)
+    with TestClient(app) as client:
+        resp = client.post(
+            "/eval",
+            content=b'{"input": "' + b"x" * 4096 + b'"}',
+            headers={"Content-Type": "application/json"},
+        )
+    assert resp.status_code == 413
+    assert resp.headers.get("X-Request-ID")
+
+
+def test_eval_rejects_total_upload_too_large(settings: Settings) -> None:
+    capped = settings.model_copy(update={"max_total_upload_size": 4})
+    with _client(capped) as client:
+        resp = client.post(
+            "/eval",
+            json={
+                "input": "pass",
+                "files": [
+                    {"path": "a.txt", "content": "aaa"},
+                    {"path": "b.txt", "content": "bbb"},
+                ],
+            },
+        )
+    assert resp.status_code == 400
+    assert "combined" in resp.json()["detail"]
+
+
+def test_eval_returns_429_when_at_capacity(settings: Settings) -> None:
+    app = create_app(settings.model_copy(update={"max_concurrent_evals": 1}))
+    with TestClient(app) as client:
+        # Exhaust the single slot directly so the next request is rejected.
+        app.state.limiter._semaphore.acquire()
+        try:
+            resp = client.post("/eval", json={"input": "print(1)"})
+        finally:
+            app.state.limiter._semaphore.release()
+    assert resp.status_code == 429
+    assert resp.headers.get("Retry-After") == "1"

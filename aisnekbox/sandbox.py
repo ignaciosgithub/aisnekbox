@@ -22,6 +22,7 @@ without a kernel.
 from __future__ import annotations
 
 import base64
+import contextlib
 import logging
 import os
 import shutil
@@ -71,8 +72,19 @@ class Sandbox:
             raise SandboxError(f"executable_path not permitted: {requested!r}")
         return requested
 
-    def build_command(self, work_dir: str, executable: str, args: list[str]) -> list[str]:
-        """Build the NsJail argument vector (pure, no side effects)."""
+    def build_command(
+        self,
+        work_dir: str,
+        executable: str,
+        args: list[str],
+        log_path: str | None = None,
+    ) -> list[str]:
+        """Build the NsJail argument vector (pure, no side effects).
+
+        When ``log_path`` is given, NsJail is told to write its own diagnostic
+        logs there. This keeps the jailed process's stdout/stderr free of
+        NsJail's INFO/WARNING noise so only genuine program output is returned.
+        """
         s = self._settings
         cmd: list[str] = [
             s.nsjail_binary,
@@ -80,6 +92,10 @@ class Sandbox:
             str(s.nsjail_config),
             "--cwd",
             JAIL_HOME,
+        ]
+        if log_path is not None:
+            cmd += ["--log", log_path]
+        cmd += [
             # Bind-mount the per-run work dir read-write as the jail home.
             "--bindmount",
             f"{work_dir}:{JAIL_HOME}",
@@ -92,6 +108,8 @@ class Sandbox:
             str(s.memory_limit_mb),
             "--rlimit_fsize",
             str(max(1, self._memfs_size_mb)),
+            "--rlimit_nproc",
+            str(s.max_processes),
             "--",
             executable,
             ENTRYPOINT_NAME,
@@ -105,16 +123,21 @@ class Sandbox:
         self._validate_input(request)
 
         work_dir = tempfile.mkdtemp(prefix="aisnekbox-")
+        log_fd, log_path = tempfile.mkstemp(prefix="aisnekbox-jail-", suffix=".log")
+        os.close(log_fd)
         try:
             self._populate(work_dir, request)
             before = self._snapshot(work_dir)
-            cmd = self.build_command(work_dir, executable, request.args)
+            cmd = self.build_command(work_dir, executable, request.args, log_path=log_path)
             logger.debug("launching nsjail: %s", " ".join(cmd))
             output = self._run(cmd)
+            self._log_jail_diagnostics(log_path)
             files = self._collect_files(work_dir, before)
             return EvalResult(stdout=output.stdout, returncode=output.returncode, files=files)
         finally:
             shutil.rmtree(work_dir, ignore_errors=True)
+            with contextlib.suppress(OSError):
+                os.unlink(log_path)
 
     # ------------------------------------------------------------------ #
     # Internals
@@ -132,10 +155,14 @@ class Sandbox:
         entrypoint = Path(work_dir) / ENTRYPOINT_NAME
         entrypoint.write_text(request.input, encoding="utf-8")
 
+        total = 0
         for payload in request.files:
             data = payload.decoded_bytes()
             if len(data) > self._settings.max_file_size:
                 raise SandboxError(f"uploaded file too large: {payload.path!r}")
+            total += len(data)
+            if total > self._settings.max_total_upload_size:
+                raise SandboxError("combined uploaded files exceed the maximum allowed size")
             target = self._safe_join(work_dir, payload.path)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
@@ -208,6 +235,21 @@ class Sandbox:
         if total >= max_size:
             text += "\n[output truncated]"
         return _RunOutput(stdout=text, returncode=returncode)
+
+    @staticmethod
+    def _log_jail_diagnostics(log_path: str) -> None:
+        """Record NsJail's own log output for auditing without leaking it.
+
+        The jail's diagnostics (mount table, UID warnings, exit status) are
+        useful for operators but must never be returned to the client, so they
+        are emitted to the service log at debug level only.
+        """
+        try:
+            data = Path(log_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+        if data:
+            logger.debug("nsjail diagnostics (%d bytes): %s", len(data), data.strip())
 
     @staticmethod
     def _terminate(proc: subprocess.Popen[bytes]) -> None:

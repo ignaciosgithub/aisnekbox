@@ -39,8 +39,8 @@ jobs:
       - name: Mypy
         run: mypy aisnekbox
 
-      - name: Pytest
-        run: pytest -q
+      - name: Pytest (with coverage gate)
+        run: pytest -q --cov=aisnekbox --cov-report=term-missing --cov-fail-under=90
 
   docker-build:
     runs-on: ubuntu-latest

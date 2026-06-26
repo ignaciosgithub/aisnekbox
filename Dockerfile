@@ -45,10 +45,14 @@ COPY config ./config
 
 RUN pip install --no-cache-dir ".[server]"
 
+# The official python image ships the interpreter under /usr/local/bin, so
+# point the default executable there (the config default targets /usr/bin for
+# Debian-style hosts).
 ENV AISNEKBOX_HOST=0.0.0.0 \
     AISNEKBOX_PORT=8060 \
     AISNEKBOX_NSJAIL_BINARY=/usr/local/bin/nsjail \
-    AISNEKBOX_NSJAIL_CONFIG=/app/config/nsjail.cfg
+    AISNEKBOX_NSJAIL_CONFIG=/app/config/nsjail.cfg \
+    AISNEKBOX_DEFAULT_EXECUTABLE=/usr/local/bin/python3
 
 EXPOSE 8060
 
