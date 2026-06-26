@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build NsJail from source.
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS nsjail-builder
+FROM python:3.14-slim-bookworm AS nsjail-builder
 
 ARG NSJAIL_VERSION=3.4
 
@@ -27,7 +27,7 @@ RUN git clone --branch "${NSJAIL_VERSION}" --depth 1 \
 # ---------------------------------------------------------------------------
 # Stage 2: runtime image.
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 # Runtime shared libraries that the nsjail binary links against.
 RUN apt-get update && apt-get install -y --no-install-recommends \
