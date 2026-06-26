@@ -55,9 +55,20 @@ The jail (see [`config/nsjail.cfg`](config/nsjail.cfg)) provides:
 - **Resource limits** — CPU time, address space, file size, open files and
   process count rlimits, plus a supervisor-enforced wall-clock timeout and
   output-size cap (defence in depth).
+- **Seccomp-bpf filter** — a default-allow syscall policy that returns `EPERM`
+  for socket creation and hard-kills high-risk syscalls (`ptrace`, `mount`,
+  namespace/privilege-escalation and kernel-modification calls).
+- **Bounded concurrency** — at most `AISNEKBOX_MAX_CONCURRENT_EVALS` jails run
+  at once; excess requests are rejected with `429` instead of overcommitting
+  the host.
+- **Request-size caps** — oversized request bodies are rejected with `413`
+  before buffering, and combined uploaded-file size is capped.
 
 Because NsJail relies on Linux user namespaces and mount operations, the
 container runs `--privileged` (as is standard for NsJail-based sandboxes).
+
+See [SECURITY.md](SECURITY.md) for the full threat model and
+[DESIGN.md](DESIGN.md) for the architecture and design rationale.
 
 ## API
 
@@ -134,8 +145,20 @@ pytest
 ruff check .
 mypy aisnekbox
 
+# Or use the Makefile shortcuts:
+make check          # lint + typecheck + coverage gate
+make coverage       # tests with a 90% coverage floor
+
 # Run the API (requires a real `nsjail` on PATH to actually evaluate code):
 python -m aisnekbox
+```
+
+### Benchmarking
+
+With a server running, measure latency/throughput under load:
+
+```bash
+python scripts/benchmark.py --url http://localhost:8060 --requests 200 --concurrency 8
 ```
 
 ## Configuration
@@ -154,6 +177,9 @@ environment variables (see [`aisnekbox/config.py`](aisnekbox/config.py)):
 | `AISNEKBOX_MAX_OUTPUT_SIZE`    | `1000000`        | Max captured output (bytes).             |
 | `AISNEKBOX_MEMFS_SIZE_MB`      | `32`             | Work dir / file-size budget (MiB).       |
 | `AISNEKBOX_ALLOWED_EXECUTABLES`| python3 paths    | Comma-separated interpreter allowlist.   |
+| `AISNEKBOX_MAX_TOTAL_UPLOAD_SIZE` | `8000000`     | Max combined uploaded-file size (bytes). |
+| `AISNEKBOX_MAX_REQUEST_BODY_SIZE` | `16000000`    | Reject larger request bodies with `413`. |
+| `AISNEKBOX_MAX_CONCURRENT_EVALS`  | `8`           | Concurrent jails before `429` backpressure. |
 | `AISNEKBOX_DEBUG`              | `false`          | Verbose logging.                         |
 
 ## License

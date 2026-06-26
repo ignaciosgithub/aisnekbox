@@ -41,8 +41,8 @@ FAKE_NSJAIL = textwrap.dedent(
             cmd = argv[i + 1 :]
             break
         # Skip flags that take a value.
-        if token in ("--config", "--cwd", "--time_limit", "--rlimit_cpu",
-                     "--rlimit_as", "--rlimit_fsize"):
+        if token in ("--config", "--cwd", "--log", "--time_limit", "--rlimit_cpu",
+                     "--rlimit_as", "--rlimit_fsize", "--rlimit_nproc"):
             i += 2
             continue
         i += 1
