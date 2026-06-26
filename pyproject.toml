@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aisnekbox"
+version = "0.1.0"
+description = "A secure REST sandbox for executing untrusted Python code in isolation via NsJail."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ignaciosgithub" }]
+keywords = ["sandbox", "nsjail", "code-execution", "isolation", "security"]
+dependencies = [
+    "fastapi>=0.111,<1.0",
+    "uvicorn[standard]>=0.30,<1.0",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.3,<3.0",
+]
+
+[project.optional-dependencies]
+server = ["gunicorn>=22.0,<24.0"]
+dev = [
+    "pytest>=8.2,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "httpx>=0.27,<1.0",
+    "ruff>=0.5,<1.0",
+    "mypy>=1.10,<2.0",
+]
+
+[project.scripts]
+aisnekbox = "aisnekbox.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/ignaciosgithub/aisnekbox"
+
+[tool.hatch.build.targets.wheel]
+packages = ["aisnekbox"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "C4", "SIM", "RET"]
+# S603: subprocess calls are intentional and the core of this service; they are
+#       individually reviewed and never use a shell.
+# B008: FastAPI's dependency-injection idiom relies on `Depends(...)` in
+#       parameter defaults.
+# S104: binding to 0.0.0.0 is intentional for a containerised service.
+ignore = ["S603", "B008", "S104"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S603", "S607"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
